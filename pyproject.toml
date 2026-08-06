@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blank-report"
+version = "0.1.0"
+description = "Turn any Git repository into a single-file insight report: hotspots, coupling, ownership, activity."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["git", "code-analysis", "hotspots", "technical-debt", "visualization", "cli"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/nikhilcherry/blank"
+Issues = "https://github.com/nikhilcherry/blank/issues"
+
+[project.scripts]
+blank = "blank.cli:entry"
+
+[tool.setuptools]
+packages = ["blank"]
+
+[tool.setuptools.package-data]
+blank = ["style.css", "app.js"]
+
+[tool.ruff]
+line-length = 118
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["E501"]

@@ -1,0 +1,5 @@
+include LICENSE
+include README.md
+include blank/style.css
+include blank/app.js
+recursive-include tests *.py
