@@ -2,8 +2,28 @@ import datetime as dt
 import unittest
 
 from blank import analyze
-from blank.analyze import AuthorStats, FileMetrics
+from blank.analyze import AuthorStats, FileMetrics, Report
 from blank.gitlog import Commit, FileChange
+
+
+def metrics(path, *, commits, complexity, added=0, lines=100):
+    return FileMetrics(
+        path=path, language="Python", lines=lines, code_lines=lines,
+        complexity=complexity, commits=commits, added=added,
+    )
+
+
+def _report(*, files, since=None):
+    """A Report with only the fields the derived properties actually read."""
+    return Report(
+        name="demo", root="/tmp/demo", branch="main", remote=None,
+        generated=dt.datetime(2024, 6, 1), version="0.1.0",
+        files=list(files), authors=[], languages=[], activity=[], coupling=[],
+        directories=[], orphans=[], stale=[],
+        total_commits=len(files), window_commits=len(files),
+        first_commit=dt.datetime(2024, 1, 1), last_commit=dt.datetime(2024, 6, 1),
+        bus_factor=1, since=since, skipped_bulk=0,
+    )
 
 
 def commit(paths, author="Ada", day=1, added=5, deleted=1):
@@ -86,6 +106,51 @@ class CouplingTests(unittest.TestCase):
         self.assertEqual({result[0][0], result[0][1]}, {"new.py", "b.py"})
 
 
+class ThinHistoryTests(unittest.TestCase):
+    """A narrow --since window empties the ranking on a mature repository."""
+
+    def make(self, *, scored, total, since=None):
+        files = []
+        for i in range(total):
+            files.append(metrics(f"f{i}.py", commits=2 if i < scored else 1, complexity=1.0 + i))
+        report = _report(files=files, since=since)
+        return report
+
+    def test_healthy_repo_is_not_flagged(self):
+        # Real repositories score 80-100% of code files with full history.
+        self.assertFalse(self.make(scored=90, total=100).thin_history)
+
+    def test_narrow_window_is_flagged_even_with_many_files(self):
+        # 9 of 110 is what flask over six months looks like: plenty of files,
+        # plenty of history, and a ranking resting on almost nothing.
+        report = self.make(scored=9, total=110, since="6 months ago")
+        self.assertTrue(report.thin_history)
+        self.assertLess(report.scored_ratio, analyze.MIN_SCORED_RATIO)
+
+    def test_absolute_floor_still_applies(self):
+        # All four files scored — a perfect ratio — but four is not a ranking.
+        self.assertTrue(self.make(scored=4, total=4).thin_history)
+
+    def test_reason_names_the_window_only_when_there_is_one(self):
+        windowed = analyze.thin_history_reason(self.make(scored=9, total=110, since="6 months ago"))
+        self.assertIn("since 6 months ago", windowed)
+        self.assertNotIn("since", analyze.thin_history_reason(self.make(scored=2, total=4)))
+
+    def test_reason_handles_nothing_scored(self):
+        self.assertIn("no file has been revised",
+                      analyze.thin_history_reason(self.make(scored=0, total=4)))
+
+    def test_fix_differs_by_cause(self):
+        self.assertEqual(
+            analyze.thin_history_fix(self.make(scored=9, total=110, since="1 month ago")),
+            "widen the window",
+        )
+        self.assertEqual(analyze.thin_history_fix(self.make(scored=2, total=4)), "wait for more history")
+
+    def test_scored_ratio_with_no_code_files(self):
+        self.assertEqual(_report(files=[]).scored_ratio, 0.0)
+
+
 class PathRelationTests(unittest.TestCase):
     """Comparing first path segments was wrong in both directions."""
 
@@ -158,13 +223,6 @@ class ActivityTests(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(analyze._daily_activity([]), [])
-
-
-def metrics(path, *, commits, complexity, added=0, lines=100):
-    return FileMetrics(
-        path=path, language="Python", lines=lines, code_lines=lines,
-        complexity=complexity, commits=commits, added=added,
-    )
 
 
 class HotspotScoringTests(unittest.TestCase):

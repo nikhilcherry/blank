@@ -394,14 +394,30 @@ the repository. It is a *relative* ranking: 0.9 means "worst in this repo", not 
 some industry threshold". Comparing scores between two different repositories is meaningless.
 
 Files revised fewer than twice score 0 — created-and-never-touched is zero evidence, not low
-risk. When fewer than five files clear that bar, `blank` says so instead of printing a
-confident-looking ranking built on nothing:
+risk. `blank` refuses to present a ranking built on nothing, and says which of the two
+causes it is:
 
 ```
 ── hotspots  (revisions × complexity) ──────────────────────────────
-  thin history — only 0 file(s) revised more than once, so the ranking is noise
-  nothing to rank — no file has been revised since it was created.
+  thin history — no file has been revised since it was created,
+  so the ranking below is noise (wait for more history)
 ```
+
+The second cause is subtler and more dangerous: a `--since` window narrow enough that most
+files were touched once or never. The repository plainly *has* history, so nothing looks
+wrong — but the ranking is resting on a handful of files:
+
+```
+$ blank stats ~/code/flask --since "6 months ago"
+── hotspots  (revisions × complexity) ──────────────────────────────
+  thin history — only 9 of 110 code files have been revised more than
+  once since 6 months ago, so the ranking below is noise (widen the window)
+```
+
+The threshold is grounded rather than guessed. With full history, real repositories score
+80–100% of their code files (flask 83%, django 80%, express 94%, cobra 100%, ripgrep 87%).
+Flask over six months scores 8% — and six months is also the shortest window whose
+top-ranked file stops agreeing with the full-history answer.
 
 **Coupling ratio** — `commits containing both / commits containing the rarer of the two`.
 Reported at ≥4 shared commits and ≥35%.
@@ -469,7 +485,7 @@ past 50k.
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 144 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 151 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 

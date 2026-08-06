@@ -13,7 +13,13 @@ from importlib import resources
 from pathlib import Path
 
 from . import charts
-from .analyze import UNRELATED, Report, path_relation
+from .analyze import (
+    UNRELATED,
+    Report,
+    path_relation,
+    thin_history_fix,
+    thin_history_reason,
+)
 from .charts import esc
 
 _MAX_TABLE_ROWS = 250
@@ -248,11 +254,10 @@ def render_html(report: Report) -> str:
         )
     if report.thin_history:
         notes.append(
-            f"<strong>Thin history.</strong> Only {report.scored_files} file"
-            f"{'' if report.scored_files == 1 else 's'} have been revised more than once, "
-            "so the risk ranking has almost nothing to work from. Complexity and composition "
-            "are still accurate; treat the hotspot scores as unreliable until the repository "
-            "has more history."
+            f"<strong>Thin history.</strong> {esc(thin_history_reason(report)).capitalize()}, "
+            f"so the risk ranking has almost nothing to work from — {esc(thin_history_fix(report))}. "
+            "Complexity and composition are still accurate; treat the hotspot scores as "
+            "unreliable."
         )
     window_note = "".join(f'<div class="note">{note}</div>' for note in notes)
 
@@ -391,8 +396,8 @@ def render_markdown(report: Report, *, limit: int = 10) -> str:
         lines.append("")
     if report.thin_history:
         lines.append(
-            f"> ⚠️ **Thin history** — only {report.scored_files} file(s) revised more than "
-            "once, so the risk ranking below is not yet meaningful."
+            f"> ⚠️ **Thin history** — {thin_history_reason(report)}, so the risk ranking "
+            f"below is not yet meaningful ({thin_history_fix(report)})."
         )
         lines.append("")
 

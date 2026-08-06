@@ -34,6 +34,15 @@ MIN_REVISIONS = 2
 # useful than printing a confident-looking list.
 MIN_SCORED_FILES = 5
 
+# The same problem arrives a second way: a --since window narrow enough that
+# most files were touched once or not at all. Measured with full history,
+# healthy repositories score 80-100% of their code files (flask 83%, django
+# 80%, express 94%, cobra 100%, ripgrep 87%). Flask over six months scores 8%,
+# and that is also the shortest window whose top-ranked file stops agreeing
+# with the full-history answer. Anything under this fraction is a window
+# problem, not a finding.
+MIN_SCORED_RATIO = 0.15
+
 STALE_DAYS = 365
 
 
@@ -149,14 +158,23 @@ class Report:
         return sum(1 for f in self.code_files if f.commits >= MIN_REVISIONS)
 
     @property
+    def scored_ratio(self) -> float:
+        """Share of code files that carry a risk score (0..1)."""
+        total = len(self.code_files)
+        return self.scored_files / total if total else 0.0
+
+    @property
     def thin_history(self) -> bool:
         """True when the ranking rests on too little history to be believed.
 
-        A freshly imported repository has real files and real complexity but no
-        revision history, and a confident-looking risk table there is worse
-        than no table at all.
+        Two ways to get here. A freshly imported repository has real files and
+        real complexity but no revision history at all. A ``--since`` window
+        narrow enough that most files were touched once or never produces the
+        same emptiness on a mature codebase — and there the confident-looking
+        table is more dangerous, because the repository plainly *does* have
+        history and the reader has no reason to doubt the numbers.
         """
-        return self.scored_files < MIN_SCORED_FILES
+        return self.scored_files < MIN_SCORED_FILES or self.scored_ratio < MIN_SCORED_RATIO
 
     @property
     def age_days(self) -> int:
@@ -205,6 +223,24 @@ def _bus_factor(authors: Iterable[AuthorStats], threshold: float = 0.5) -> int:
 SAME_DIRECTORY = "same directory"
 SAME_AREA = "same area"
 UNRELATED = "unrelated"
+
+
+def thin_history_reason(report: Report) -> str:
+    """State the fact behind an untrustworthy ranking. No conclusion attached.
+
+    Callers append their own ("…the ranking is noise"), so the sentence must
+    not draw the conclusion itself or the two stack up into a run-on.
+    """
+    scored, total = report.scored_files, len(report.code_files)
+    if scored == 0:
+        return "no file has been revised since it was created"
+    window = f" since {report.since}" if report.since else ""
+    return f"only {scored} of {total} code files have been revised more than once{window}"
+
+
+def thin_history_fix(report: Report) -> str:
+    """What the reader should do about it — the two causes need different acts."""
+    return "widen the window" if report.since else "wait for more history"
 
 
 def path_relation(a: str, b: str) -> str:

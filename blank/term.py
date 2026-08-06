@@ -13,7 +13,13 @@ import sys
 import unicodedata
 from collections.abc import Sequence
 
-from .analyze import UNRELATED, Report, path_relation
+from .analyze import (
+    UNRELATED,
+    Report,
+    path_relation,
+    thin_history_fix,
+    thin_history_reason,
+)
 
 SPARK = "▁▂▃▄▅▆▇█"
 BLOCK = "█"
@@ -175,8 +181,8 @@ def render_summary(report: Report, style: Style) -> str:
                 "  "
                 + style.yellow("thin history")
                 + style.dim(
-                    f" — only {report.scored_files} file(s) revised more than once,"
-                    " so the ranking is noise"
+                    f" — {thin_history_reason(report)}, so the ranking below is noise"
+                    f" ({thin_history_fix(report)})"
                 )
             )
         if hotspots:
