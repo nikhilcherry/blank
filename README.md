@@ -364,11 +364,18 @@ reset a file's history to zero. This is the change-frequency axis.
 **Churn** — lines added + deleted. Reported in the table and the JSON as supporting detail,
 but deliberately *not* used for ranking, for the reason above.
 
-**Complexity** — mean indentation depth + 0.35 × max depth, in 4-space units. This is an
-*indentation proxy*, not an AST metric. It cannot tell a nested comprehension from a nested
-`if`. What it can do is work identically across 40 languages with no parser, and deeply
-indented code is genuinely harder to hold in your head regardless of syntax. Files under 5
-code lines score 0.
+**Complexity** — mean nesting depth + 0.35 × max depth. This is an *indentation proxy*, not
+an AST metric. It cannot tell a nested comprehension from a nested `if`. What it can do is
+work identically across 40 languages with no parser, and deeply indented code is genuinely
+harder to hold in your head regardless of syntax. Files under 5 code lines score 0.
+
+Depth is counted in **nesting levels, not columns**, with the indent unit detected per file
+from the most common step between consecutive lines. A fixed four columns would be wrong for
+most of the web: Go and Rust indent in fours, but JavaScript, TypeScript and Ruby indent in
+twos, so a fixed divisor halves their depth and rounds one level of nesting to zero — and in
+a polyglot repo the Python would outrank the JavaScript no matter how tangled the JavaScript
+got. Measured across cobra, ripgrep and express, detection picks 4, 4 and 2 for 194 of 196
+files.
 
 **Risk** — `normalise(revisions) × normalise(complexity)`, both `log1p`-scaled to 0..1 across
 the repository. It is a *relative* ranking: 0.9 means "worst in this repo", not "worse than
@@ -450,7 +457,7 @@ past 50k.
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 128 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 137 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 

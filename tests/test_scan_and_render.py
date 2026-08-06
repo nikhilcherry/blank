@@ -43,8 +43,34 @@ class ClassifyTests(unittest.TestCase):
         self.assertFalse(scan.should_skip("src/app.js"))
 
 
+class IndentUnitTests(unittest.TestCase):
+    """One nesting level is not always four columns."""
+
+    def test_detects_four(self):
+        self.assertEqual(scan.detect_indent_unit([0, 4, 8, 4, 0, 4, 8, 12]), 4)
+
+    def test_detects_two(self):
+        # JavaScript, TypeScript and Ruby overwhelmingly indent in twos.
+        self.assertEqual(scan.detect_indent_unit([0, 2, 4, 2, 0, 2, 4, 6]), 2)
+
+    def test_detects_three(self):
+        self.assertEqual(scan.detect_indent_unit([0, 3, 6, 3, 0, 3, 6, 9]), 3)
+
+    def test_flat_file_falls_back(self):
+        self.assertEqual(scan.detect_indent_unit([0, 0, 0]), scan.TAB_WIDTH)
+        self.assertEqual(scan.detect_indent_unit([]), scan.TAB_WIDTH)
+
+    def test_giant_steps_are_alignment_not_nesting(self):
+        # Continuation lines aligned under a long call signature.
+        self.assertEqual(scan.detect_indent_unit([0, 40, 0, 40]), scan.TAB_WIDTH)
+
+    def test_never_returns_zero_or_negative(self):
+        for widths in ([0, 0], [5, 1, 5, 1], [0], [3, 3, 3]):
+            self.assertGreaterEqual(scan.detect_indent_unit(widths), 1, widths)
+
+
 class MeasureTests(unittest.TestCase):
-    def test_indentation_is_measured_in_four_space_units(self):
+    def test_depth_is_measured_in_nesting_levels(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "x.py"
             path.write_text("def f():\n    if x:\n        return 1\n\n")
@@ -55,12 +81,44 @@ class MeasureTests(unittest.TestCase):
             self.assertEqual(mx, 2)
             self.assertAlmostEqual(mean, 1.0)
 
-    def test_tabs_count_as_one_unit(self):
+    def test_two_space_and_four_space_code_measure_the_same(self):
+        """The whole point: identical nesting must score identically.
+
+        Before per-file unit detection, the 2-space version scored half as
+        deep, so JavaScript could never outrank Python however tangled it got.
+        """
+        four = "def f():\n    if x:\n        if y:\n            return 1\n"
+        two = "function f() {\n  if (x) {\n    if (y) {\n      return 1;\n"
+        with TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a.py", Path(tmp) / "b.js"
+            a.write_text(four)
+            b.write_text(two)
+            _, _, mean_a, max_a, _ = scan.measure(a)
+            _, _, mean_b, max_b, _ = scan.measure(b)
+            self.assertEqual((mean_a, max_a), (mean_b, max_b))
+            self.assertEqual(max_a, 3)
+
+    def test_tabs_count_as_one_level(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "x.go"
             path.write_text("func f() {\n\treturn\n}\n")
             *_, mx, _ = scan.measure(path)
             self.assertEqual(mx, 1)
+
+    def test_tab_and_space_files_agree(self):
+        tabbed = "func f() {\n\tif x {\n\t\treturn 1\n\t}\n}\n"
+        spaced = "func f() {\n    if x {\n        return 1\n    }\n}\n"
+        with TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a.go", Path(tmp) / "b.go"
+            a.write_text(tabbed)
+            b.write_text(spaced)
+            self.assertEqual(scan.measure(a), scan.measure(b))
+
+    def test_empty_file(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "empty.py"
+            path.write_text("")
+            self.assertEqual(scan.measure(path), (0, 0, 0.0, 0, False))
 
     def test_binary_detected(self):
         with TemporaryDirectory() as tmp:
