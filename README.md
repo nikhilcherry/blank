@@ -289,6 +289,8 @@ blank scan . -o /dev/null --markdown "$GITHUB_STEP_SUMMARY"
 blank scan . -o /dev/null --json - | jq '.hotspots[:3]'
 ```
 
+Progress messages go to stderr, so stdout is nothing but the payload and pipes cleanly.
+
 ```json
 [
   {
@@ -448,7 +450,7 @@ past 50k.
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 121 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 128 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 

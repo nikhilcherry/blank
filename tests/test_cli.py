@@ -69,13 +69,23 @@ class CliTests(unittest.TestCase):
         self.assertIn("core.py", html)
         self.assertNotIn("<link", html)
 
-    def test_scan_json_to_stdout(self):
-        import json
-        code, out, _ = self.run_cli("scan", str(self.root), "-o", str(self.root / "r.html"),
-                                    "--json", "-", "--no-color")
+    def test_scan_json_to_stdout_is_pipeable(self):
+        # `blank scan . -o /dev/null --json - | jq` must work, so stdout has to
+        # be nothing but the JSON — progress lines belong on stderr.
+        code, out, err = self.run_cli("scan", str(self.root), "-o", str(self.root / "r.html"),
+                                      "--json", "-", "--no-color")
         self.assertEqual(code, 0)
-        payload = json.loads(out[out.index("{"):])
+        self.assertTrue(out.lstrip().startswith("{"), f"stdout polluted: {out[:80]!r}")
+        payload = json.loads(out)
         self.assertEqual(payload["window"]["commits"], 6)
+        self.assertIn("report", err)
+
+    def test_markdown_to_stdout_is_pipeable(self):
+        code, out, err = self.run_cli("scan", str(self.root), "-o", str(self.root / "r.html"),
+                                      "--markdown", "-", "--no-color")
+        self.assertEqual(code, 0)
+        self.assertTrue(out.lstrip().startswith("##"), f"stdout polluted: {out[:80]!r}")
+        self.assertIn("report", err)
 
     def test_hotspots_and_authors_and_coupling(self):
         for command in ("hotspots", "authors", "coupling"):

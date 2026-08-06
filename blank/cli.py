@@ -140,6 +140,12 @@ def _load(args: argparse.Namespace) -> Report:
 
 
 def _write(path: str, text: str, label: str, style) -> None:
+    """Write *text* to *path*, or to stdout when *path* is ``-``.
+
+    Progress lines go to stderr, never stdout. ``blank scan . -o /dev/null
+    --json - | jq`` has to work, and it cannot if a "✓ report → …" line is
+    sitting in front of the JSON.
+    """
     if path == "-":
         sys.stdout.write(text)
         return
@@ -148,7 +154,10 @@ def _write(path: str, text: str, label: str, style) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
     size = target.stat().st_size / 1024
-    print(f"{style.green('✓')} {label} → {style.bold(str(target))} {style.dim(f'({size:.0f} KB)')}")
+    print(
+        f"{style.green('✓')} {label} → {style.bold(str(target))} {style.dim(f'({size:.0f} KB)')}",
+        file=sys.stderr,
+    )
 
 
 def _cmd_scan(args: argparse.Namespace, report: Report, style) -> int:
