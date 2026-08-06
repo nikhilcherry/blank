@@ -143,8 +143,20 @@ JavaScript embedded in the page; it works offline from a `file://` URL.
 </p>
 
 Files that keep appearing in the same commit are coupled whether or not they import each
-other. A pair inside one module is usually fine. A **cross-module** pair at 80%+ means an
-abstraction is leaking, or somebody's refactor stopped halfway.
+other. Each pair is labelled by how far apart the files sit:
+
+| Label | Means | Reading |
+| --- | --- | --- |
+| `same directory` | Same folder | Unremarkable — siblings change together |
+| `same area` | Share a parent, different folders | Worth a glance |
+| `unrelated` | No directory in common | The finding: a leaking abstraction, or a refactor that stopped halfway |
+
+The obvious version of this test — compare the first path segment — is wrong in both
+directions. A file at the repository root has its *own filename* as the first segment, so
+`flag_groups.go` and `flag_groups_test.go` come out "cross-module"; on cobra that mislabels
+22 of 40 pairs. Meanwhile `examples/javascript/x` and `examples/tutorial/y` share a segment
+and come out "same module" despite being unrelated applications. Comparing directories fixes
+both.
 
 Commits touching more than 40 files are excluded — a formatting sweep would otherwise
 "couple" your entire repository to itself.
@@ -457,7 +469,7 @@ past 50k.
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 137 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 144 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 

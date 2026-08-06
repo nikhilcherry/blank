@@ -86,6 +86,63 @@ class CouplingTests(unittest.TestCase):
         self.assertEqual({result[0][0], result[0][1]}, {"new.py", "b.py"})
 
 
+class PathRelationTests(unittest.TestCase):
+    """Comparing first path segments was wrong in both directions."""
+
+    def test_same_directory(self):
+        self.assertEqual(
+            analyze.path_relation("src/flask/app.py", "src/flask/cli.py"),
+            analyze.SAME_DIRECTORY,
+        )
+
+    def test_root_level_files_are_the_same_directory(self):
+        # The regression: a root-level file's first segment is its own
+        # filename, so `flag_groups.go` and its test looked cross-module.
+        # On cobra that mislabelled 22 of 40 pairs.
+        self.assertEqual(
+            analyze.path_relation("flag_groups.go", "flag_groups_test.go"),
+            analyze.SAME_DIRECTORY,
+        )
+
+    def test_sibling_directories_are_the_same_area(self):
+        # The other direction: two unrelated example apps shared a first
+        # segment and so looked like one module.
+        self.assertEqual(
+            analyze.path_relation("examples/javascript/app.py", "examples/tutorial/app.py"),
+            analyze.SAME_AREA,
+        )
+
+    def test_no_shared_directory_is_unrelated(self):
+        self.assertEqual(
+            analyze.path_relation("src/flask/ctx.py", "tests/test_session.py"),
+            analyze.UNRELATED,
+        )
+
+    def test_root_file_against_nested_file_is_unrelated(self):
+        self.assertEqual(
+            analyze.path_relation("CHANGELOG.md", "crates/core/flags.rs"),
+            analyze.UNRELATED,
+        )
+
+    def test_nested_but_diverging_early(self):
+        self.assertEqual(
+            analyze.path_relation("a/b/c/x.py", "a/z/y.py"), analyze.SAME_AREA
+        )
+        self.assertEqual(
+            analyze.path_relation("a/b/c/x.py", "q/b/c/y.py"), analyze.UNRELATED
+        )
+
+    def test_is_symmetric(self):
+        pairs = [
+            ("src/a.py", "tests/b.py"),
+            ("a.py", "b.py"),
+            ("x/y/a.py", "x/z/b.py"),
+            ("x/y/a.py", "x/y/b.py"),
+        ]
+        for a, b in pairs:
+            self.assertEqual(analyze.path_relation(a, b), analyze.path_relation(b, a), (a, b))
+
+
 class ActivityTests(unittest.TestCase):
     def test_window_is_fixed_length_and_ends_on_the_last_commit(self):
         commits = [commit(["a.py"], day=0), commit(["a.py"], day=3)]

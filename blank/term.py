@@ -13,7 +13,7 @@ import sys
 import unicodedata
 from collections.abc import Sequence
 
-from .analyze import Report
+from .analyze import UNRELATED, Report, path_relation
 
 SPARK = "▁▂▃▄▅▆▇█"
 BLOCK = "█"
@@ -346,8 +346,7 @@ def render_coupling(report: Report, style: Style, limit: int) -> str:
     half = max(16, (cols - 26) // 2)
     out = []
     for a, b, shared, ratio in report.coupling[:limit]:
-        cross = a.split("/")[0] != b.split("/")[0]
-        marker = style.orange("⇄") if cross else style.dim("⇄")
+        marker = style.orange("⇄") if path_relation(a, b) == UNRELATED else style.dim("⇄")
         out.append(
             f"  {pad(truncate(a, half), half)} {marker} {pad(truncate(b, half), half)} "
             + style.dim(f"{ratio * 100:>3.0f}% / {shared}×")

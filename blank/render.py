@@ -13,7 +13,7 @@ from importlib import resources
 from pathlib import Path
 
 from . import charts
-from .analyze import Report
+from .analyze import UNRELATED, Report, path_relation
 from .charts import esc
 
 _MAX_TABLE_ROWS = 250
@@ -105,8 +105,9 @@ def _coupling_card(report: Report) -> str:
         )
     items = []
     for a, b, shared, ratio in report.coupling[:12]:
-        cross = a.split("/")[0] != b.split("/")[0]
-        tag = '<span class="pill danger">cross-module</span>' if cross else '<span class="pill">same module</span>'
+        relation = path_relation(a, b)
+        css = "pill danger" if relation == UNRELATED else "pill"
+        tag = f'<span class="{css}">{esc(relation)}</span>'
         items.append(
             f'<li><div class="p-files"><span>{_split_path(a)}</span>'
             f'<span class="arrow">⇄</span><span>{_split_path(b)}</span></div>'
@@ -326,8 +327,9 @@ def render_html(report: Report) -> str:
 
   <section class="card span-6">
     <h2>Temporal coupling</h2>
-    <p class="hint">Files that keep changing in the same commit. Cross-module pairs
-      usually mean a leaky abstraction or an unfinished refactor.</p>
+    <p class="hint">Files that keep changing in the same commit. Two files in one
+      directory is unremarkable; a pair with no directory in common usually means a
+      leaky abstraction or an unfinished refactor.</p>
     {_coupling_card(report)}
   </section>
 

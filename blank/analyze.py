@@ -200,6 +200,42 @@ def _bus_factor(authors: Iterable[AuthorStats], threshold: float = 0.5) -> int:
     return len(weights)
 
 
+#: How two coupled files sit relative to each other in the tree, weakest
+#: signal first. Only ``unrelated`` is genuinely worth investigating.
+SAME_DIRECTORY = "same directory"
+SAME_AREA = "same area"
+UNRELATED = "unrelated"
+
+
+def path_relation(a: str, b: str) -> str:
+    """Describe how far apart two paths are in the directory tree.
+
+    The obvious test — compare the first path segment — is wrong in both
+    directions, and measurably so. For a file at the repository root the first
+    segment *is* the filename, so ``flag_groups.go`` and its own
+    ``flag_groups_test.go`` come out "cross-module"; on cobra that mislabels 22
+    of 40 pairs. Meanwhile ``examples/javascript/x`` and
+    ``examples/tutorial/y`` share a first segment and come out "same module",
+    though they are unrelated applications.
+
+    Comparing directories fixes both. Files in one directory changing together
+    is unremarkable; files with no directory in common changing together is the
+    finding.
+    """
+    dir_a = a.rsplit("/", 1)[0] if "/" in a else ""
+    dir_b = b.rsplit("/", 1)[0] if "/" in b else ""
+    if dir_a == dir_b:
+        return SAME_DIRECTORY
+    segments_a = dir_a.split("/") if dir_a else []
+    segments_b = dir_b.split("/") if dir_b else []
+    shared = 0
+    for left, right in zip(segments_a, segments_b):
+        if left != right:
+            break
+        shared += 1
+    return SAME_AREA if shared else UNRELATED
+
+
 def _score_hotspots(code: Sequence[FileMetrics]) -> None:
     """Set ``hotspot`` on every file in *code*, in place.
 
