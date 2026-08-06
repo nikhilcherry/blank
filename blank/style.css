@@ -190,6 +190,7 @@ line.grid { stroke: var(--line); stroke-width: 1; }
 .pt.hot { fill: var(--hot); stroke: var(--hot); }
 .pt.warm { fill: var(--warm); stroke: var(--warm); }
 .pt.cool { fill: var(--cool); stroke: var(--cool); }
+.pt.dense { fill-opacity: .32; stroke-width: .8; }
 .pt:hover { fill-opacity: .95; }
 
 .bars { list-style: none; margin: 0; padding: 0; }

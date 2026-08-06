@@ -137,8 +137,16 @@ def _language_card(report: Report) -> str:
     top = report.languages[:8]
     rest = report.languages[8:]
     slices = [(lang, float(lines)) for lang, _, lines in top]
-    if rest:
-        slices.append(("Other", float(sum(lines for _, _, lines in rest))))
+    remainder = float(sum(lines for _, _, lines in rest))
+    if remainder:
+        # "Other" is also a real language bucket (unrecognised extensions), so
+        # merge into it rather than drawing a second slice with the same name.
+        for index, (label, value) in enumerate(slices):
+            if label == "Other":
+                slices[index] = (label, value + remainder)
+                break
+        else:
+            slices.append(("Other", remainder))
     total = sum(value for _, value in slices)
     return (
         '<div class="donut-wrap">'
@@ -157,14 +165,45 @@ def _treemap_card(report: Report) -> str:
     return charts.treemap(items)
 
 
-def _scatter_card(report: Report) -> str:
+_SCATTER_POINTS = 420
+
+
+def _scatter_card(report: Report) -> tuple[str, str]:
+    """Return ``(svg, note)`` for the hotspot scatter.
+
+    Big repositories have more files than a readable chart can hold. Taking the
+    top N by risk would be the obvious cut and is quietly wrong: it deletes
+    exactly the calm bottom-left the chart exists to contrast against, leaving a
+    cloud that implies the codebase has no healthy code. So keep every
+    high-risk file and take an even stride through the rest — the shape of the
+    distribution survives.
+    """
     points = [
         (f.path, float(f.commits), f.complexity, float(max(f.lines, 1)), f.hotspot)
         for f in report.code_files
         if f.commits > 0 and f.complexity > 0
     ]
     points.sort(key=lambda p: p[4], reverse=True)
-    return charts.scatter(points[:400])
+    if len(points) <= _SCATTER_POINTS:
+        return charts.scatter(points), ""
+
+    keep = _SCATTER_POINTS // 2
+    head, tail = points[:keep], points[keep:]
+    stride = max(1, len(tail) // (_SCATTER_POINTS - keep))
+    sampled = head + tail[::stride]
+    note = (
+        f" Showing the {keep} riskiest files plus every {_ordinal(stride)} of the "
+        f"remaining {len(tail):,}, so the shape of the whole distribution survives."
+    )
+    return charts.scatter(sampled), note
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def render_html(report: Report) -> str:
@@ -217,6 +256,7 @@ def render_html(report: Report) -> str:
     window_note = "".join(f'<div class="note">{note}</div>' for note in notes)
 
     remote = f' · <code>{esc(report.remote)}</code>' if report.remote else ""
+    scatter_svg, scatter_note = _scatter_card(report)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -259,8 +299,9 @@ def render_html(report: Report) -> str:
   <section class="card span-7">
     <h2>Hotspots: revisions × complexity</h2>
     <p class="hint">Bottom-left is calm code. Top-right is code that is both tangled and
-      constantly edited — that is where defects cluster. Bubble size is file length.</p>
-    {_scatter_card(report)}
+      constantly edited — that is where defects cluster. Bubble size is file length.
+      {scatter_note}</p>
+    {scatter_svg}
   </section>
 
   <section class="card span-5">
@@ -274,7 +315,7 @@ def render_html(report: Report) -> str:
       <div>
         <h2>Risk ranking</h2>
         <p class="hint">Sorted by risk score. Click any column to re-sort.
-          Risk = normalised churn × normalised indentation complexity.</p>
+          Risk = normalised revisions × normalised indentation complexity.</p>
       </div>
       <input class="filter" type="search" placeholder="Filter files…"
              data-filter="#hotspot-table" data-count="#hotspot-count" aria-label="Filter files">

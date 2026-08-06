@@ -25,6 +25,9 @@ LANGUAGES: dict[str, str] = {
     ".json": "JSON", ".yaml": "YAML", ".yml": "YAML", ".toml": "TOML", ".ini": "Config",
     ".cfg": "Config", ".xml": "XML", ".proto": "Protobuf", ".graphql": "GraphQL",
     ".tf": "Terraform", ".dockerfile": "Docker", ".nix": "Nix", ".zig": "Zig",
+    ".po": "Gettext", ".pot": "Gettext", ".bat": "Batch", ".cmd": "Batch",
+    ".geojson": "JSON", ".ipynb": "Notebook", ".csv": "CSV", ".tsv": "CSV",
+    ".1": "Roff", ".man": "Roff", ".rdoc": "Text", ".adoc": "Text", ".org": "Text",
 }
 
 FILENAME_LANGUAGES: dict[str, str] = {
@@ -40,7 +43,7 @@ FILENAME_LANGUAGES: dict[str, str] = {
 # from hotspot ranking so a churning CHANGELOG never tops the risk list.
 NON_CODE = {
     "Markdown", "Text", "JSON", "YAML", "TOML", "Config", "XML",
-    "reStructuredText", "CSV", "Other",
+    "reStructuredText", "CSV", "Other", "Gettext", "Roff", "Notebook",
 }
 
 SKIP_DIRS = {

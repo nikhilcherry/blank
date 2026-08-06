@@ -407,13 +407,38 @@ are excluded so a repo-wide reformat doesn't hand one person the whole codebase.
 
 Single pass over `git log --numstat`, one `os.walk`, everything else in memory.
 
-| Repository | Commits | Files | Time |
-| --- | --- | --- | --- |
-| pallets/flask | 3,816 | 218 | ~2.0 s |
+| Repository | Commits | Files | Time | Peak RSS | Report size |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| pallets/flask | 3,816 | 218 | 1.7 s | 98 MB | 105 KB |
+| django/django | 34,856 | 5,553 | 34 s | 399 MB | 218 KB |
 
-Narrow the window with `--since` or `--max-commits` on very large repositories — and note
-that a shorter window is often *more* useful, since last year's hotspots matter more than
-2014's.
+Measured, not estimated. The interesting part is the breakdown on Django:
+
+```
+git log            29.3 s     ← git walking 35k commits
+parse               0.7 s
+follow renames      0.1 s
+scan tree           0.9 s
+coupling            0.4 s
+```
+
+**`blank` is git-bound, not compute-bound.** Roughly 86% of a large run is `git log`
+itself computing diffs; everything blank does on top costs about two seconds. Rename
+detection (`-M`) is free — with and without it, git takes the same 29 seconds.
+
+So the lever is the history window, not the tool:
+
+```bash
+blank scan . --since "18 months ago"     # usually the more useful report anyway
+blank scan . --max-commits 5000
+```
+
+A shorter window is often *better*, not just faster: last year's hotspots tell you where
+the work is now, while a decade of history mostly tells you which files are old.
+
+Memory scales with commit count, since the parsed history is held at once — budget a
+~50 MB baseline plus roughly 10 MB per thousand commits, and reach for `--since` somewhere
+past 50k.
 
 ---
 

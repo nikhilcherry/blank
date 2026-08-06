@@ -24,6 +24,18 @@ class ClassifyTests(unittest.TestCase):
     def test_unknown_falls_through(self):
         self.assertEqual(scan.classify("data.qqq"), "Other")
 
+    def test_translation_catalogs_are_named_not_dumped_into_other(self):
+        # Django is a third .po by line count; leaving that in "Other" makes
+        # the composition chart useless.
+        self.assertEqual(scan.classify("locale/de/LC_MESSAGES/django.po"), "Gettext")
+        self.assertIn("Gettext", scan.NON_CODE)
+
+    def test_non_code_languages_are_excluded_from_ranking(self):
+        for language in ("Markdown", "JSON", "YAML", "Gettext", "Other"):
+            self.assertIn(language, scan.NON_CODE, language)
+        for language in ("Python", "Go", "Rust", "TypeScript"):
+            self.assertNotIn(language, scan.NON_CODE, language)
+
     def test_skips(self):
         self.assertTrue(scan.should_skip("node_modules/pkg/index.js"))
         self.assertTrue(scan.should_skip("app/bundle.min.js"))
@@ -214,6 +226,46 @@ class RenderTests(unittest.TestCase):
         for record in report.files:
             record.commits = 1
         self.assertIn("Thin history", render_markdown(report))
+
+    def test_overflow_languages_merge_into_the_existing_other_slice(self):
+        from blank.render import _language_card
+        report = make_report()
+        # "Other" is both a real bucket and the overflow label — one slice only.
+        report.languages = (
+            [(f"Lang{i}", 1, 1000 - i * 10) for i in range(8)]
+            + [("Other", 1, 500)]
+            + [(f"Tail{i}", 1, 5) for i in range(4)]
+        )
+        report.languages.sort(key=lambda row: row[2], reverse=True)
+        card = _language_card(report)
+        self.assertEqual(card.count(">Other<"), 1)
+
+    def test_scatter_sampling_keeps_the_low_risk_tail(self):
+        from blank.render import _SCATTER_POINTS, _scatter_card
+        report = make_report()
+        report.files = []
+        for i in range(_SCATTER_POINTS * 4):
+            record = FileMetrics(f"f{i}.py", "Python", 100, 90, 1.0 + (i % 40) / 4, commits=2 + i)
+            record.hotspot = round(i / (_SCATTER_POINTS * 4), 4)
+            report.files.append(record)
+        svg, note = _scatter_card(report)
+        self.assertIn("riskiest files plus every", note)
+        # Both extremes must survive the cut, or the chart lies about the shape.
+        self.assertIn("cool", svg)
+        self.assertIn("hot", svg)
+
+    def test_scatter_does_not_annotate_when_it_shows_everything(self):
+        from blank.render import _scatter_card
+        svg, note = _scatter_card(make_report())
+        self.assertEqual(note, "")
+        self.assertIn("<svg", svg)
+
+    def test_ordinal(self):
+        from blank.render import _ordinal
+        self.assertEqual(
+            [_ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111)],
+            ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st", "111th"],
+        )
 
     def test_report_derived_properties(self):
         report = make_report()

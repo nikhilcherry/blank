@@ -285,12 +285,20 @@ def scatter(points: Sequence[tuple[str, float, float, float, float]], *, width: 
             f'<text class="axis" x="{pad["l"] - 8}" y="{y + 4:.1f}" text-anchor="end">'
             f"{y_max * (1 - step / 4):.1f}</text>"
         )
+    # A 200-file repo and a 5,000-file repo need different mark sizes: at the
+    # top end, full-size bubbles merge into one unreadable blob. Shrink the
+    # scale and thin the fill as the cloud gets denser.
+    density = min(1.0, len(points) / 300)
+    base, span = 3 + 1 * (1 - density), 6 + 10 * (1 - density)
+    dense = " dense" if density > 0.6 else ""
+
     for point in sorted(points, key=lambda p: p[3], reverse=True):
         label, churn, complexity, size, risk = point
-        radius = 4 + 16 * math.sqrt(size / size_max)
+        radius = base + span * math.sqrt(size / size_max)
         heat = "hot" if risk >= 0.66 else ("warm" if risk >= 0.33 else "cool")
         parts.append(
-            f'<circle class="pt {heat}" cx="{px(churn):.1f}" cy="{py(complexity):.1f}" r="{radius:.1f}">'
+            f'<circle class="pt {heat}{dense}" cx="{px(churn):.1f}" cy="{py(complexity):.1f}" '
+            f'r="{radius:.1f}">'
             f"<title>{esc(label)}\n{int(churn)} revisions · complexity {complexity:.1f} · "
             f"{int(size)} lines</title></circle>"
         )
