@@ -448,7 +448,7 @@ past 50k.
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 104 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 121 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 

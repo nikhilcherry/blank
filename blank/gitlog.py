@@ -66,10 +66,18 @@ class Commit:
 
 
 def run_git(repo: Path, args: Sequence[str], *, check: bool = True) -> str:
-    """Run ``git <args>`` inside *repo* and return stdout as text."""
+    """Run ``git <args>`` inside *repo* and return stdout as text.
+
+    ``core.quotepath=false`` is not optional. With git's default, any path
+    containing a non-ASCII byte comes back octal-escaped and double-quoted —
+    ``"d/\\303\\274ber.py"`` instead of ``d/über.py``. Those names then match
+    nothing from ``os.walk``, so every accented, CJK or emoji-named file is
+    silently dropped from the scan and its history is attributed to a path that
+    does not exist. Silent, and invisible in an ASCII-only test repo.
+    """
     try:
         proc = subprocess.run(
-            ["git", "-C", str(repo), *args],
+            ["git", "-C", str(repo), "-c", "core.quotepath=false", *args],
             capture_output=True,
             text=True,
             errors="replace",
@@ -87,11 +95,20 @@ def repo_root(path: Path) -> Path:
     """Resolve *path* to the root of the repository that contains it."""
     if not path.exists():
         raise GitError(f"{path} does not exist")
-    out = run_git(path if path.is_dir() else path.parent, ["rev-parse", "--show-toplevel"])
+    where = path if path.is_dir() else path.parent
+    out = run_git(where, ["rev-parse", "--show-toplevel"], check=False)
     root = out.strip()
-    if not root:
-        raise GitError(f"{path} is not inside a Git repository")
-    return Path(root)
+    if root:
+        return Path(root)
+
+    # A bare repository has history but no files to measure, so the useful
+    # thing to say is what to do about it, not to echo git's plumbing error.
+    if run_git(where, ["rev-parse", "--is-bare-repository"], check=False).strip() == "true":
+        raise GitError(
+            f"{path} is a bare repository — blank measures file contents, so it needs a "
+            "working tree. Clone it normally first."
+        )
+    raise GitError(f"{path} is not inside a Git repository")
 
 
 def has_commits(repo: Path) -> bool:
