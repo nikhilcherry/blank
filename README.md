@@ -36,7 +36,7 @@ files, and they never show up in a linter. They are the files that are **both** 
 
 | Question | What `blank` shows |
 | --- | --- |
-| *Which files are actually dangerous?* | Risk ranking — churn × complexity, not size |
+| *Which files are actually dangerous?* | Risk ranking — revisions × complexity, not size |
 | *What breaks when I change this?* | Temporal coupling — files that always change together |
 | *Who do we lose if someone leaves?* | Bus factor and per-file ownership |
 | *What has nobody understood in years?* | Orphaned hotspots — risky code whose only author left |
@@ -62,7 +62,7 @@ python3 -m blank stats ~/code/some-repo
 
 **Requirements:** Python 3.9+ and `git`. That's it. `blank` has **zero** third-party
 dependencies — no numpy, no jinja, no charting library. The entire tool is the standard
-library plus about 1,800 lines of Python.
+library plus about 2,000 lines of Python.
 
 ---
 
@@ -71,7 +71,7 @@ library plus about 1,800 lines of Python.
 ```
 blank scan [PATH]        write a self-contained HTML report
 blank stats [PATH]       print a summary in the terminal
-blank hotspots [PATH]    rank files by churn × complexity
+blank hotspots [PATH]    rank files by revisions × complexity
 blank authors [PATH]     contribution breakdown
 blank coupling [PATH]    files that change together
 blank check [PATH]       fail a build when thresholds are crossed
@@ -83,7 +83,7 @@ Every command accepts the same window flags:
 | --- | --- |
 | `--since DATE` | Only commits after `DATE` — anything git parses (`2024-01-01`, `18 months ago`, `1.year`) |
 | `--max-commits N` | Stop after N commits, newest first |
-| `--include-merges` | Count merge commits (off by default — they double-count churn) |
+| `--include-merges` | Count merge commits (off by default — they double-count changes) |
 | `--no-color` | Plain output for logs and pipes (also honours `NO_COLOR`) |
 
 ### In the terminal
@@ -102,21 +102,24 @@ Colour switches itself off when stdout is not a TTY, so piping into a file stays
 
 ## What's in the report
 
-### Hotspots: churn × complexity
+### Hotspots: revisions × complexity
 
 <p align="center">
-  <img src="docs/img/hotspots-scatter.png" alt="Scatter plot of churn against indentation complexity, with high-risk files in red at the top right" width="100%">
+  <img src="docs/img/hotspots-scatter.png" alt="Scatter plot of revisions against indentation complexity, with high-risk files in red at the top right" width="100%">
 </p>
 
-Each bubble is a file. Right means "edited a lot". Up means "deeply nested". Bubble size is
+Each bubble is a file. Right means "revised often". Up means "deeply nested". Bubble size is
 length. **Bottom-left is calm code. Top-right is where your incidents come from.**
 
 Complex code that nobody touches is fine — leave it alone. Simple code that changes daily is
 fine too — that's just an active module. The product of the two is the signal, and it is the
 one metric here that reliably predicts where the next bug lands.
 
-Both axes are log-normalised to 0..1 before multiplying, so one 13,000-line-churn outlier
-doesn't flatten everything else to zero.
+Change frequency is counted in **revisions, not lines changed**. Lines-changed looks like the
+obvious choice and is a trap: a file's very first commit adds every line it has, so in a young
+repository "churn" is just file length in disguise, and a fresh import reports every file as a
+screaming hotspot. Revisions can't be inflated that way. Both axes are log-normalised to 0..1
+before multiplying.
 
 <p align="center">
   <img src="docs/img/risk-table.png" alt="Sortable risk ranking table listing files with risk score, commits, churn, complexity, lines, authors and days since last change" width="100%">
@@ -222,7 +225,7 @@ blank scan . -o /dev/null --json - | jq '.hotspots[:3]'
 [
   {
     "path": "src/flask/sansio/app.py",
-    "risk": 0.9591,
+    "risk": 1.0,
     "commits": 508,
     "churn": 13482,
     "complexity": 5.089,
@@ -245,8 +248,11 @@ The JSON carries `summary`, `languages`, `hotspots`, `coupling`, `authors` and
 Every number here is a **proxy**. They are worth arguing with — which is why the definitions
 live in exactly one file, [`blank/analyze.py`](blank/analyze.py).
 
-**Churn** — lines added + deleted per file across the window, following renames so a
-`git mv` doesn't reset a file's history to zero.
+**Revisions** — how many commits touched the file, following renames so a `git mv` doesn't
+reset a file's history to zero. This is the change-frequency axis.
+
+**Churn** — lines added + deleted. Reported in the table and the JSON as supporting detail,
+but deliberately *not* used for ranking, for the reason above.
 
 **Complexity** — mean indentation depth + 0.35 × max depth, in 4-space units. This is an
 *indentation proxy*, not an AST metric. It cannot tell a nested comprehension from a nested
@@ -254,9 +260,19 @@ live in exactly one file, [`blank/analyze.py`](blank/analyze.py).
 indented code is genuinely harder to hold in your head regardless of syntax. Files under 5
 code lines score 0.
 
-**Risk** — `normalise(churn) × normalise(complexity)`, both `log1p`-scaled to 0..1 across the
-repository. It is a *relative* ranking: 0.9 means "worst in this repo", not "worse than some
-industry threshold". Comparing scores between two different repositories is meaningless.
+**Risk** — `normalise(revisions) × normalise(complexity)`, both `log1p`-scaled to 0..1 across
+the repository. It is a *relative* ranking: 0.9 means "worst in this repo", not "worse than
+some industry threshold". Comparing scores between two different repositories is meaningless.
+
+Files revised fewer than twice score 0 — created-and-never-touched is zero evidence, not low
+risk. When fewer than five files clear that bar, `blank` says so instead of printing a
+confident-looking ranking built on nothing:
+
+```
+── hotspots  (revisions × complexity) ──────────────────────────────
+  thin history — only 0 file(s) revised more than once, so the ranking is noise
+  nothing to rank — no file has been revised since it was created.
+```
 
 **Coupling ratio** — `commits containing both / commits containing the rarer of the two`.
 Reported at ≥4 shared commits and ≥35%.
@@ -299,7 +315,7 @@ that a shorter window is often *more* useful, since last year's hotspots matter 
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 73 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 81 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 

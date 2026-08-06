@@ -159,9 +159,9 @@ def _treemap_card(report: Report) -> str:
 
 def _scatter_card(report: Report) -> str:
     points = [
-        (f.path, float(f.churn), f.complexity, float(max(f.lines, 1)), f.hotspot)
+        (f.path, float(f.commits), f.complexity, float(max(f.lines, 1)), f.hotspot)
         for f in report.code_files
-        if f.churn > 0 and f.complexity > 0
+        if f.commits > 0 and f.complexity > 0
     ]
     points.sort(key=lambda p: p[4], reverse=True)
     return charts.scatter(points[:400])
@@ -200,12 +200,21 @@ def render_html(report: Report) -> str:
         ]
     )
 
-    window_note = (
-        f'<div class="note">History window: commits since <code>{esc(report.since)}</code>. '
-        "Metrics describe this window only.</div>"
-        if report.since
-        else ""
-    )
+    notes = []
+    if report.since:
+        notes.append(
+            f"History window: commits since <code>{esc(report.since)}</code>. "
+            "Metrics describe this window only."
+        )
+    if report.thin_history:
+        notes.append(
+            f"<strong>Thin history.</strong> Only {report.scored_files} file"
+            f"{'' if report.scored_files == 1 else 's'} have been revised more than once, "
+            "so the risk ranking has almost nothing to work from. Complexity and composition "
+            "are still accurate; treat the hotspot scores as unreliable until the repository "
+            "has more history."
+        )
+    window_note = "".join(f'<div class="note">{note}</div>' for note in notes)
 
     remote = f' · <code>{esc(report.remote)}</code>' if report.remote else ""
 
@@ -248,7 +257,7 @@ def render_html(report: Report) -> str:
   </section>
 
   <section class="card span-7">
-    <h2>Hotspots: churn × complexity</h2>
+    <h2>Hotspots: revisions × complexity</h2>
     <p class="hint">Bottom-left is calm code. Top-right is code that is both tangled and
       constantly edited — that is where defects cluster. Bubble size is file length.</p>
     {_scatter_card(report)}

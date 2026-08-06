@@ -250,7 +250,7 @@ def treemap(items: Sequence[tuple[str, float, str]], *, width: int = 720, height
 # --------------------------------------------------------------------------
 
 def scatter(points: Sequence[tuple[str, float, float, float, float]], *, width: int = 720, height: int = 360) -> str:
-    """Churn (x) against complexity (y), bubble area by size, colour by risk.
+    """Revisions (x) against complexity (y), bubble area by size, colour by risk.
 
     *points* is ``(label, x, y, size, risk)``.
     """
@@ -291,12 +291,12 @@ def scatter(points: Sequence[tuple[str, float, float, float, float]], *, width: 
         heat = "hot" if risk >= 0.66 else ("warm" if risk >= 0.33 else "cool")
         parts.append(
             f'<circle class="pt {heat}" cx="{px(churn):.1f}" cy="{py(complexity):.1f}" r="{radius:.1f}">'
-            f"<title>{esc(label)}\nchurn {int(churn)} lines · complexity {complexity:.1f} · "
+            f"<title>{esc(label)}\n{int(churn)} revisions · complexity {complexity:.1f} · "
             f"{int(size)} lines</title></circle>"
         )
     parts.append(
         f'<text class="axis-title" x="{pad["l"] + plot_w / 2}" y="{height - 10}" text-anchor="middle">'
-        "churn (lines changed, log scale) →</text>"
+        "revisions (commits touching the file, log scale) →</text>"
     )
     parts.append(
         f'<text class="axis-title" x="14" y="{pad["t"] + plot_h / 2}" text-anchor="middle" '

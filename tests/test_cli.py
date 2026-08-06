@@ -105,6 +105,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("no commits", out)
 
+    def test_thin_history_is_called_out_rather_than_faked(self):
+        # A single-commit repo has real files but no revision history at all.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "-C", str(root), "init", "-q", "-b", "main"],
+                           check=True, capture_output=True, env={**os.environ, **ENV})
+            (root / "app.py").write_text("def f():\n" + "    " * 3 + "return 1\n")
+            for cmd in (["add", "-A"], ["commit", "-qm", "initial import"]):
+                subprocess.run(["git", "-C", str(root), *cmd], check=True,
+                               capture_output=True, env={**os.environ, **ENV})
+
+            code, out, _ = self.run_cli("stats", str(root), "--no-color")
+            self.assertEqual(code, 0)
+            self.assertIn("thin history", out)
+            self.assertIn("nothing to rank", out)
+
+            html = root / "r.html"
+            self.run_cli("scan", str(root), "-o", str(html), "--no-color")
+            self.assertIn("Thin history", html.read_text())
+
     def test_non_repository_path_exits_two(self):
         with TemporaryDirectory() as plain:
             code, _, err = self.run_cli("stats", plain, "--no-color")

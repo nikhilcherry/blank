@@ -26,6 +26,14 @@ BULK_COMMIT_FILES = 40
 MIN_COUPLING_COMMITS = 4
 MIN_COUPLING_RATIO = 0.35
 
+# A file has to have been revised at least once after being created before its
+# change frequency means anything.
+MIN_REVISIONS = 2
+
+# Below this many scored files the ranking is noise, and saying so is more
+# useful than printing a confident-looking list.
+MIN_SCORED_FILES = 5
+
 STALE_DAYS = 365
 
 
@@ -136,6 +144,21 @@ class Report:
         )
 
     @property
+    def scored_files(self) -> int:
+        """Files with enough revision history to carry a risk score."""
+        return sum(1 for f in self.code_files if f.commits >= MIN_REVISIONS)
+
+    @property
+    def thin_history(self) -> bool:
+        """True when the ranking rests on too little history to be believed.
+
+        A freshly imported repository has real files and real complexity but no
+        revision history, and a confident-looking risk table there is worse
+        than no table at all.
+        """
+        return self.scored_files < MIN_SCORED_FILES
+
+    @property
     def age_days(self) -> int:
         if not (self.first_commit and self.last_commit):
             return 0
@@ -175,6 +198,34 @@ def _bus_factor(authors: Iterable[AuthorStats], threshold: float = 0.5) -> int:
         if running >= total * threshold:
             return count
     return len(weights)
+
+
+def _score_hotspots(code: Sequence[FileMetrics]) -> None:
+    """Set ``hotspot`` on every file in *code*, in place.
+
+    Risk is ``normalise(revisions) × normalise(complexity)``, both log-scaled to
+    0..1 across the repository.
+
+    Change frequency is measured in **revisions**, not lines changed. Churn
+    looks like the obvious choice and is a trap: a file's first commit adds
+    every one of its lines, so in a young repository churn is just file length
+    wearing a disguise, and a freshly imported codebase reports every file as a
+    screaming hotspot. Revisions cannot be inflated that way — a file committed
+    once has been revised zero times, which is exactly the right amount of
+    evidence to draw from it.
+
+    Churn is still collected and reported; it just does not drive the ranking.
+    """
+    scored = [f for f in code if f.commits >= MIN_REVISIONS]
+    for record in code:
+        record.hotspot = 0.0
+    if not scored:
+        return
+    # Revisions beyond the first: a file committed once contributes nothing.
+    frequency = _norm([f.commits - 1 for f in scored])
+    complexity = _norm([f.complexity for f in scored])
+    for record, freq, cx in zip(scored, frequency, complexity):
+        record.hotspot = round(freq * cx, 4)
 
 
 def _tracked_files(repo: Path) -> set[str]:
@@ -291,15 +342,8 @@ def build_report(
                 record.authors[commit.author] += max(1, change.added)
 
     files = list(metrics.values())
-
-    # Hotspot = churn x complexity, both log-normalised to 0..1. A file that is
-    # complex but never touched is fine; a file touched daily but flat is fine.
-    # The product is what hurts.
     code = [f for f in files if f.language not in scan.NON_CODE]
-    churn_scores = _norm([f.churn for f in code])
-    cx_scores = _norm([f.complexity for f in code])
-    for record, churn_score, cx_score in zip(code, churn_scores, cx_scores):
-        record.hotspot = round(churn_score * cx_score, 4)
+    _score_hotspots(code)
 
     lang_files: Counter[str] = Counter()
     lang_lines: Counter[str] = Counter()

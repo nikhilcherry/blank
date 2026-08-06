@@ -168,19 +168,34 @@ def render_summary(report: Report, style: Style) -> str:
         out.append("")
 
     hotspots = report.hotspots[:10]
-    if hotspots:
-        out.append(_rule(style, "hotspots  (churn × complexity)", cols))
-        path_width = max(24, cols - 46)
-        out.append(
-            style.dim(f"  {'file':<{path_width}} {'risk':>5} {'commits':>8} {'churn':>8} {'lines':>7}")
-        )
-        for record in hotspots:
-            colour = style.red if record.hotspot >= 0.5 else (style.yellow if record.hotspot >= 0.22 else style.green)
+    if report.code_files:
+        out.append(_rule(style, "hotspots  (revisions × complexity)", cols))
+        if report.thin_history:
             out.append(
-                f"  {pad(truncate(record.path, path_width), path_width)} "
-                f"{colour(f'{record.hotspot:>5.2f}')} "
-                f"{_num(record.commits):>8} {_num(record.churn):>8} {_num(record.lines):>7}"
+                "  "
+                + style.yellow("thin history")
+                + style.dim(
+                    f" — only {report.scored_files} file(s) revised more than once,"
+                    " so the ranking is noise"
+                )
             )
+        if hotspots:
+            path_width = max(24, cols - 46)
+            out.append(
+                style.dim(f"  {'file':<{path_width}} {'risk':>5} {'commits':>8} {'churn':>8} {'lines':>7}")
+            )
+            for record in hotspots:
+                colour = (
+                    style.red if record.hotspot >= 0.5
+                    else (style.yellow if record.hotspot >= 0.22 else style.green)
+                )
+                out.append(
+                    f"  {pad(truncate(record.path, path_width), path_width)} "
+                    f"{colour(f'{record.hotspot:>5.2f}')} "
+                    f"{_num(record.commits):>8} {_num(record.churn):>8} {_num(record.lines):>7}"
+                )
+        else:
+            out.append(style.dim("  nothing to rank — no file has been revised since it was created."))
         out.append("")
 
     if report.coupling:

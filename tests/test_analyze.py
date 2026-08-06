@@ -103,6 +103,63 @@ class ActivityTests(unittest.TestCase):
         self.assertEqual(analyze._daily_activity([]), [])
 
 
+def metrics(path, *, commits, complexity, added=0, lines=100):
+    return FileMetrics(
+        path=path, language="Python", lines=lines, code_lines=lines,
+        complexity=complexity, commits=commits, added=added,
+    )
+
+
+class HotspotScoringTests(unittest.TestCase):
+    def test_a_file_committed_once_scores_zero(self):
+        # Its "churn" is just its own length — that is creation, not change.
+        files = [metrics("new.py", commits=1, complexity=9.0, added=5000)]
+        analyze._score_hotspots(files)
+        self.assertEqual(files[0].hotspot, 0.0)
+
+    def test_a_freshly_imported_repo_ranks_nothing(self):
+        files = [metrics(f"f{i}.py", commits=1, complexity=float(i + 1), added=900) for i in range(20)]
+        analyze._score_hotspots(files)
+        self.assertEqual({f.hotspot for f in files}, {0.0})
+
+    def test_revisions_beat_churn(self):
+        # A 200k-line vendored drop must not outrank a genuinely churning file
+        # of the same complexity.
+        files = [metrics(f"f{i}.py", commits=2 + i * 20, complexity=4.0 + i, added=100) for i in range(5)]
+        big_once = metrics("vendored.py", commits=2, complexity=8.0, added=200_000)
+        files.append(big_once)
+        analyze._score_hotspots(files)
+        self.assertEqual(max(files, key=lambda f: f.hotspot).path, "f4.py")
+        self.assertGreater(files[4].hotspot, big_once.hotspot)
+
+    def test_identical_complexity_carries_no_signal(self):
+        # If every file is equally complex, complexity cannot discriminate, and
+        # a relative score of 0 across the board is the honest answer.
+        files = [metrics(f"f{i}.py", commits=2 + i * 30, complexity=5.0) for i in range(4)]
+        analyze._score_hotspots(files)
+        self.assertEqual({f.hotspot for f in files}, {0.0})
+
+    def test_complexity_and_frequency_both_required(self):
+        flat_but_busy = metrics("config.py", commits=300, complexity=0.0)
+        gnarly_but_calm = metrics("legacy.py", commits=2, complexity=40.0)
+        both = metrics("danger.py", commits=300, complexity=40.0)
+        files = [flat_but_busy, gnarly_but_calm, both]
+        analyze._score_hotspots(files)
+        self.assertEqual(flat_but_busy.hotspot, 0.0)
+        self.assertEqual(gnarly_but_calm.hotspot, 0.0)
+        self.assertEqual(both.hotspot, 1.0)
+
+    def test_scoring_is_idempotent(self):
+        files = [metrics(f"f{i}.py", commits=i + 2, complexity=float(i + 1)) for i in range(6)]
+        analyze._score_hotspots(files)
+        first = [f.hotspot for f in files]
+        analyze._score_hotspots(files)
+        self.assertEqual(first, [f.hotspot for f in files])
+
+    def test_empty_input(self):
+        analyze._score_hotspots([])  # must not raise
+
+
 class FileMetricsTests(unittest.TestCase):
     def test_ownership_and_main_author(self):
         record = FileMetrics("a.py", "Python", 10, 8, 1.0)
