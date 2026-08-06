@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 
 from blank import charts, scan
 from blank.analyze import AuthorStats, FileMetrics, Report
-from blank.render import render_html, render_json
+from blank.render import render_html, render_json, render_markdown
 
 
 class ClassifyTests(unittest.TestCase):
@@ -191,6 +191,29 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(payload["repository"]["branch"], "main")
         self.assertEqual(payload["hotspots"][0]["path"], "src/mod5.py")
         self.assertEqual(payload["coupling"][0]["shared_commits"], 9)
+
+    def test_markdown_is_a_compact_summary(self):
+        md = render_markdown(make_report())
+        self.assertTrue(md.startswith("## `demo`"))
+        self.assertIn("| File | Risk | Revisions |", md)
+        self.assertIn("`src/mod5.py`", md)
+        self.assertIn("bus factor **1**", md)
+        # Table rows must not leak beyond the limit.
+        self.assertLessEqual(len(render_markdown(make_report(), limit=2).splitlines()), 30)
+
+    def test_markdown_flags_a_low_bus_factor(self):
+        self.assertIn("bus factor **1** ⚠️", render_markdown(make_report()))
+
+    def test_markdown_escapes_nothing_it_should_not(self):
+        md = render_markdown(make_report())
+        # Paths are wrapped in backticks, so underscores stay literal.
+        self.assertIn("`src/mod1.py` ⇄ `src/mod2.py`", md)
+
+    def test_markdown_reports_thin_history(self):
+        report = make_report()
+        for record in report.files:
+            record.commits = 1
+        self.assertIn("Thin history", render_markdown(report))
 
     def test_report_derived_properties(self):
         report = make_report()

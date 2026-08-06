@@ -39,7 +39,13 @@ jobs:
       - name: Analyse this repository with itself
         run: |
           python -m blank stats .
-          python -m blank scan . -o blank-report.html --json blank-report.json
+          python -m blank scan . -o blank-report.html --json blank-report.json \
+            --markdown blank-report.md
+
+      - name: Publish the summary to the job page
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: cat blank-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the report
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
@@ -49,6 +55,7 @@ jobs:
           path: |
             blank-report.html
             blank-report.json
+            blank-report.md
 
   lint:
     runs-on: ubuntu-latest
@@ -74,3 +81,27 @@ jobs:
           python -m pip install dist/*.whl
           blank --version
           blank stats .
+
+  action:
+    name: Exercise the bundled action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Use the action from this very checkout, so a broken action.yml fails CI.
+      - uses: ./
+        id: blank
+        with:
+          min-bus-factor: "1"
+
+      - name: Assert the action produced what it promises
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s blank-report.html
+          test -s blank-report.json
+          echo "bus factor: ${{ steps.blank.outputs.bus-factor }}"
+          echo "top risk:   ${{ steps.blank.outputs.top-risk }}"
+          test -n "${{ steps.blank.outputs.bus-factor }}"

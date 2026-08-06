@@ -1,0 +1,135 @@
+name: "blank — code health report"
+description: >-
+  Analyse a Git repository's hotspots, coupling and knowledge risk, write the
+  summary to the job page, and optionally fail the build on thresholds.
+author: "blank contributors"
+
+branding:
+  icon: activity
+  color: orange
+
+inputs:
+  path:
+    description: "Repository path to analyse."
+    required: false
+    default: "."
+  since:
+    description: >-
+      Only analyse commits after this date. Anything git understands, e.g.
+      "2024-01-01" or "18 months ago". Empty means all history.
+    required: false
+    default: ""
+  report:
+    description: "Where to write the HTML report. Empty disables it."
+    required: false
+    default: "blank-report.html"
+  json:
+    description: "Where to write the JSON analysis. Empty disables it."
+    required: false
+    default: "blank-report.json"
+  summary:
+    description: "Write the Markdown summary to the GitHub job summary page."
+    required: false
+    default: "true"
+  max-risk:
+    description: "Fail if any file scores above this risk (0..1). Empty disables the check."
+    required: false
+    default: ""
+  min-bus-factor:
+    description: "Fail if the bus factor is below this. Empty disables the check."
+    required: false
+    default: ""
+  max-orphans:
+    description: "Fail if more than this many orphaned hotspots exist. Empty disables the check."
+    required: false
+    default: ""
+
+outputs:
+  report:
+    description: "Path to the generated HTML report."
+    value: ${{ steps.run.outputs.report }}
+  json:
+    description: "Path to the generated JSON analysis."
+    value: ${{ steps.run.outputs.json }}
+  bus-factor:
+    description: "The computed bus factor."
+    value: ${{ steps.run.outputs.bus-factor }}
+  top-risk:
+    description: "The highest risk score in the repository."
+    value: ${{ steps.run.outputs.top-risk }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check out blank
+      uses: actions/checkout@v4
+      with:
+        repository: nikhilcherry/blank
+        path: .blank-tool
+        fetch-depth: 1
+
+    - name: Analyse
+      id: run
+      shell: bash
+      env:
+        # Quoted so an empty input stays empty rather than becoming the literal
+        # string "null", and so dates with spaces survive word splitting.
+        BLANK_PATH: ${{ inputs.path }}
+        BLANK_SINCE: ${{ inputs.since }}
+        BLANK_REPORT: ${{ inputs.report }}
+        BLANK_JSON: ${{ inputs.json }}
+        BLANK_SUMMARY: ${{ inputs.summary }}
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        export PYTHONPATH="$GITHUB_WORKSPACE/.blank-tool:${PYTHONPATH:-}"
+
+        if [ "$(git rev-list --count HEAD 2>/dev/null || echo 0)" -le 1 ]; then
+          echo "::warning title=blank::Only one commit is visible. Set" \
+               "'fetch-depth: 0' on actions/checkout — every history metric needs it."
+        fi
+
+        # Note: `[ -n "$x" ] && args+=(...)` would abort the whole step under
+        # `set -e` every time the test is false. Use explicit ifs.
+        args=("$BLANK_PATH")
+        if [ -n "$BLANK_SINCE" ]; then args+=(--since "$BLANK_SINCE"); fi
+        if [ -n "$BLANK_REPORT" ]; then args+=(-o "$BLANK_REPORT"); else args+=(-o /dev/null); fi
+        if [ -n "$BLANK_JSON" ]; then args+=(--json "$BLANK_JSON"); fi
+        if [ "$BLANK_SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          args+=(--markdown "$GITHUB_STEP_SUMMARY")
+        fi
+
+        python3 -m blank scan "${args[@]}" --no-color
+
+        {
+          echo "report=$BLANK_REPORT"
+          echo "json=$BLANK_JSON"
+        } >> "$GITHUB_OUTPUT"
+
+        # One line on purpose: a multi-line -c script cannot be indented inside
+        # a YAML block scalar without Python rejecting the leading whitespace.
+        if [ -n "$BLANK_JSON" ] && [ -f "$BLANK_JSON" ]; then
+          python3 -c "import json,sys; d=json.load(open(sys.argv[1])); t=(d.get('hotspots') or [{}])[0]; print('bus-factor=%s' % d['summary']['bus_factor']); print('top-risk=%s' % t.get('risk', 0))" "$BLANK_JSON" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Check thresholds
+      if: inputs.max-risk != '' || inputs.min-bus-factor != '' || inputs.max-orphans != ''
+      shell: bash
+      env:
+        BLANK_PATH: ${{ inputs.path }}
+        BLANK_SINCE: ${{ inputs.since }}
+        MAX_RISK: ${{ inputs.max-risk }}
+        MIN_BUS: ${{ inputs.min-bus-factor }}
+        MAX_ORPHANS: ${{ inputs.max-orphans }}
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        export PYTHONPATH="$GITHUB_WORKSPACE/.blank-tool:${PYTHONPATH:-}"
+
+        args=("$BLANK_PATH")
+        if [ -n "$BLANK_SINCE" ]; then args+=(--since "$BLANK_SINCE"); fi
+        if [ -n "$MAX_RISK" ]; then args+=(--max-risk "$MAX_RISK"); fi
+        if [ -n "$MIN_BUS" ]; then args+=(--min-bus-factor "$MIN_BUS"); fi
+        if [ -n "$MAX_ORPHANS" ]; then args+=(--max-orphans "$MAX_ORPHANS"); fi
+
+        python3 -m blank check "${args[@]}" --no-color

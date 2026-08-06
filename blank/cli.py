@@ -10,7 +10,7 @@ from pathlib import Path
 from . import __version__
 from .analyze import Report, build_report
 from .gitlog import GitError
-from .render import render_html, render_json
+from .render import render_html, render_json, render_markdown
 from .term import make_style, render_authors, render_coupling, render_hotspots, render_summary
 
 EPILOG = """\
@@ -21,6 +21,7 @@ examples:
   blank hotspots -n 30 --since=1.year
   blank check --min-bus-factor 2 --max-risk 0.85   gate a CI build
   blank scan . --json - | jq .summary
+  blank scan . --markdown "$GITHUB_STEP_SUMMARY"
 """
 
 
@@ -61,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="output file, or - for stdout (default: blank-report.html)",
     )
     scan.add_argument("--json", metavar="FILE", help="also write the raw analysis as JSON ('-' for stdout)")
+    scan.add_argument(
+        "--markdown", metavar="FILE",
+        help="also write a compact Markdown summary, sized for a PR comment or "
+             "$GITHUB_STEP_SUMMARY ('-' for stdout)",
+    )
     scan.add_argument("--open", dest="open_browser", action="store_true", help="open the report when done")
 
     stats = subs.add_parser("stats", help="print a summary in the terminal")
@@ -112,6 +118,8 @@ def _cmd_scan(args: argparse.Namespace, report: Report, style) -> int:
     _write(args.output, render_html(report), "report", style)
     if args.json:
         _write(args.json, render_json(report), "json", style)
+    if args.markdown:
+        _write(args.markdown, render_markdown(report), "markdown", style)
     if args.open_browser and args.output != "-":
         webbrowser.open(Path(args.output).expanduser().resolve().as_uri())
     return 0

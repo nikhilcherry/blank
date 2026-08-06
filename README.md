@@ -49,7 +49,7 @@ Everything is derived from data you already have. Nothing is uploaded anywhere.
 ## Install
 
 ```bash
-pip install blank-report          # provides the `blank` command
+pipx install git+https://github.com/nikhilcherry/blank     # provides the `blank` command
 ```
 
 Or run it straight from a clone — there is nothing to build:
@@ -59,6 +59,9 @@ git clone https://github.com/nikhilcherry/blank
 cd blank
 python3 -m blank stats ~/code/some-repo
 ```
+
+> Not on PyPI yet. Once it is published, `pip install blank-report` will work too — the
+> package name is reserved in [`pyproject.toml`](pyproject.toml).
 
 **Requirements:** Python 3.9+ and `git`. That's it. `blank` has **zero** third-party
 dependencies — no numpy, no jinja, no charting library. The entire tool is the standard
@@ -76,6 +79,9 @@ blank authors [PATH]     contribution breakdown
 blank coupling [PATH]    files that change together
 blank check [PATH]       fail a build when thresholds are crossed
 ```
+
+`scan` writes HTML by default, and can emit JSON (`--json`) and Markdown (`--markdown`)
+in the same pass — pass `-` to any of them for stdout.
 
 Every command accepts the same window flags:
 
@@ -195,25 +201,83 @@ blank check . --max-risk 0.85 --min-bus-factor 2 --max-orphans 5
   <img src="docs/img/terminal-check.png" alt="blank check failing with six findings: five files over the risk threshold and a bus factor below the minimum" width="82%">
 </p>
 
+### The bundled Action
+
+`blank` ships its own composite action, so the whole thing is four lines:
+
 ```yaml
 # .github/workflows/health.yml
-- uses: actions/checkout@v4
-  with:
-    fetch-depth: 0            # blank needs history — a shallow clone has none
+name: Code health
+on: [push, pull_request]
 
-- run: pipx install blank-report
-- run: blank check . --max-risk 0.9 --min-bus-factor 2
+jobs:
+  blank:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # blank needs history — a shallow clone has none
 
-- run: blank scan . -o blank-report.html
-- uses: actions/upload-artifact@v4
-  with:
-    name: blank-report
-    path: blank-report.html
+      - uses: nikhilcherry/blank@main
+        with:
+          max-risk: "0.9"
+          min-bus-factor: "2"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blank-report
+          path: blank-report.html
 ```
 
+It writes the Markdown summary straight to the job summary page, so the numbers are on the
+run itself — no artifact to download to see them.
+
+| Input | Default | Does |
+| --- | --- | --- |
+| `path` | `.` | Repository to analyse |
+| `since` | *(all)* | Restrict the history window |
+| `report` | `blank-report.html` | HTML output path; empty disables |
+| `json` | `blank-report.json` | JSON output path; empty disables |
+| `summary` | `true` | Write Markdown to `$GITHUB_STEP_SUMMARY` |
+| `max-risk` | *(off)* | Fail above this risk score |
+| `min-bus-factor` | *(off)* | Fail below this bus factor |
+| `max-orphans` | *(off)* | Fail above this many orphaned hotspots |
+
+Outputs `report`, `json`, `bus-factor` and `top-risk` for later steps to consume.
+
 > [!IMPORTANT]
-> `fetch-depth: 0` is not optional. The default shallow checkout has one commit, and every
-> history-derived metric will read as zero.
+> `fetch-depth: 0` is not optional. The default shallow checkout has one commit, every
+> history-derived metric reads as zero, and `blank` will warn you about exactly this.
+
+### Markdown anywhere else
+
+```bash
+blank scan . -o /dev/null --markdown - > summary.md      # or pipe into a PR comment
+blank scan . -o /dev/null --markdown "$GITHUB_STEP_SUMMARY"
+```
+
+<details>
+<summary>What the summary looks like</summary>
+
+```markdown
+## `flask` — code health
+
+**3,816** commits · **218** files · **34,290** lines · **870** contributors · bus factor **2** ⚠️
+
+### Top risks
+
+| File | Risk | Revisions | Complexity | Lines | Authors | Last touched |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `src/flask/sansio/app.py` | 🔴 1.00 | 508 | 5.1 | 1,013 | 134 | 89d |
+| `src/flask/helpers.py` | 🔴 0.79 | 292 | 3.9 | 682 | 84 | 148d |
+| `src/flask/cli.py` | 🔴 0.71 | 184 | 3.8 | 1,127 | 58 | 49d |
+
+### Files that change together
+
+- `src/flask/ctx.py` ⇄ `tests/test_session_interface.py` — 100% of the time (4 commits) — **cross-module**
+```
+
+</details>
 
 ### Machine-readable output
 
@@ -315,7 +379,7 @@ that a shorter window is often *more* useful, since last year's hotspots matter 
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 81 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 85 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 
@@ -327,7 +391,7 @@ The layout:
 | [`blank/scan.py`](blank/scan.py) | Walks the tree: languages, line counts, indentation |
 | [`blank/analyze.py`](blank/analyze.py) | Every metric definition, in one place |
 | [`blank/charts.py`](blank/charts.py) | Server-rendered SVG: heatmap, donut, treemap, scatter |
-| [`blank/render.py`](blank/render.py) | Assembles the HTML and JSON reports |
+| [`blank/render.py`](blank/render.py) | Assembles the HTML, JSON and Markdown reports |
 | [`blank/term.py`](blank/term.py) | Terminal output: colour, bars, sparklines |
 | [`blank/cli.py`](blank/cli.py) | Argument parsing and command dispatch |
 
