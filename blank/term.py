@@ -275,6 +275,70 @@ def render_authors(report: Report, style: Style, limit: int) -> str:
     return "\n".join(out)
 
 
+def render_comparison(diff, style: Style, limit: int) -> str:
+    """Terminal view of a :class:`~blank.compare.Comparison`."""
+    cols = width()
+    out = ["", f"{style.bold(diff.name)} {style.dim(f'{diff.before_label} → {diff.after_label}')}", ""]
+
+    for label, (old, new) in (
+        ("commits", diff.commits),
+        ("files", diff.files),
+        ("lines", diff.lines),
+        ("contributors", diff.authors),
+        ("bus factor", diff.bus_factor),
+    ):
+        change = new - old
+        if change == 0:
+            arrow = style.dim("     —")
+        elif label == "bus factor":
+            # More authors holding the knowledge is the good direction here.
+            paint = style.green if change > 0 else style.red
+            arrow = paint(f"{change:+6,}")
+        else:
+            arrow = style.dim(f"{change:+6,}")
+        out.append(f"  {pad(label, 14)} {old:>9,} → {new:>9,}  {arrow}")
+    out.append("")
+
+    if diff.unchanged:
+        out.append(style.dim("  no file moved more than the noise floor"))
+        out.append("")
+        return "\n".join(out)
+
+    path_width = max(24, cols - 34)
+    for title, rows, paint in (
+        ("got riskier", diff.worse[:limit], style.red),
+        ("new hotspots", diff.added[:limit], style.red),
+        ("improved", diff.better[:limit], style.green),
+        ("no longer ranked", diff.removed[:limit], style.green),
+    ):
+        if not rows:
+            continue
+        out.append(_rule(style, title, cols))
+        for delta in rows:
+            if delta.kind == "new":
+                detail = paint(f"{delta.after:>5.2f}") + style.dim("  (new)")
+            elif delta.kind == "gone":
+                detail = style.dim(f"{delta.before:>5.2f}  (was)")
+            else:
+                detail = f"{delta.before:>5.2f} → " + paint(f"{delta.after:<5.2f}") + style.dim(
+                    f" {delta.change:+.2f}"
+                )
+            out.append(f"  {pad(truncate(delta.path, path_width), path_width)} {detail}")
+        out.append("")
+
+    if diff.new_coupling:
+        out.append(_rule(style, "newly coupled", cols))
+        half = max(16, (cols - 20) // 2)
+        for a, b, ratio in diff.new_coupling[:5]:
+            out.append(
+                f"  {pad(truncate(a, half), half)} {style.orange('⇄')} "
+                f"{pad(truncate(b, half), half)} " + style.dim(f"{ratio * 100:.0f}%")
+            )
+        out.append("")
+
+    return "\n".join(out)
+
+
 def render_coupling(report: Report, style: Style, limit: int) -> str:
     cols = width()
     if not report.coupling:

@@ -41,6 +41,7 @@ files, and they never show up in a linter. They are the files that are **both** 
 | *Who do we lose if someone leaves?* | Bus factor and per-file ownership |
 | *What has nobody understood in years?* | Orphaned hotspots — risky code whose only author left |
 | *Is this project healthy or crunching?* | A year of commit activity, at a glance |
+| *Is it getting better or worse?* | `blank diff` between any two reports |
 
 Everything is derived from data you already have. Nothing is uploaded anywhere.
 
@@ -78,6 +79,7 @@ blank hotspots [PATH]    rank files by revisions × complexity
 blank authors [PATH]     contribution breakdown
 blank coupling [PATH]    files that change together
 blank check [PATH]       fail a build when thresholds are crossed
+blank diff OLD.json NEW.json   compare two reports and show what moved
 ```
 
 `scan` writes HTML by default, and can emit JSON (`--json`) and Markdown (`--markdown`)
@@ -303,7 +305,47 @@ blank scan . -o /dev/null --json - | jq '.hotspots[:3]'
 ```
 
 The JSON carries `summary`, `languages`, `hotspots`, `coupling`, `authors` and
-`knowledge_risk`. Diff two runs to watch risk move over a quarter.
+`knowledge_risk`.
+
+---
+
+## Watching it move
+
+One report tells you where a codebase stands. Two tell you which direction it's heading,
+which is the more actionable question. `blank diff` compares any two JSON reports:
+
+```bash
+blank scan . -o /dev/null --json baseline.json     # keep this as a CI artifact
+# ...three months later...
+blank diff baseline.json current.json
+```
+
+<p align="center">
+  <img src="docs/img/terminal-diff.png" alt="blank diff output showing summary deltas, files that got riskier, new hotspots, improved files, files no longer ranked, and newly coupled pairs" width="92%">
+</p>
+
+That's Flask across 525 real commits, and it tells the story correctly: `src/flask/app.py`
+drops out of the ranking at 1.00 while `src/flask/sansio/app.py` appears at 1.00 — the
+`sansio` refactor, visible as a shape in the data.
+
+Nothing is re-analysed, so a baseline is just a small JSON file you keep around. Moves
+smaller than `0.05` are suppressed as noise (`--floor` to change it), because risk is a
+*relative* score and tiny wobbles are files entering and leaving the normalisation set.
+
+### Gate a pull request on it
+
+```bash
+blank diff baseline.json current.json --max-increase 0.15   # exit 1 if risk jumps
+blank diff baseline.json current.json --fail-on-regression  # exit 1 on any increase
+blank diff baseline.json current.json --markdown - >> "$GITHUB_STEP_SUMMARY"
+```
+
+Without a gate flag, `diff` always exits `0` — it reports, it doesn't judge.
+
+> [!NOTE]
+> Two independent analyses can't see across a rename, so a moved file shows up as one
+> entry under *no longer ranked* and another under *new hotspots*. That's deliberate:
+> guessing which new path replaced which old one would invent facts.
 
 ---
 
@@ -379,7 +421,7 @@ that a shorter window is often *more* useful, since last year's hotspots matter 
 
 ```bash
 git clone https://github.com/nikhilcherry/blank && cd blank
-python3 -m unittest discover -s tests -t . -v     # 85 tests, no dependencies
+python3 -m unittest discover -s tests -t . -v     # 104 tests, no dependencies
 python3 -m blank scan . --open                    # run it on itself
 ```
 
@@ -392,6 +434,7 @@ The layout:
 | [`blank/analyze.py`](blank/analyze.py) | Every metric definition, in one place |
 | [`blank/charts.py`](blank/charts.py) | Server-rendered SVG: heatmap, donut, treemap, scatter |
 | [`blank/render.py`](blank/render.py) | Assembles the HTML, JSON and Markdown reports |
+| [`blank/compare.py`](blank/compare.py) | Diffs two JSON reports — what got riskier, what improved |
 | [`blank/term.py`](blank/term.py) | Terminal output: colour, bars, sparklines |
 | [`blank/cli.py`](blank/cli.py) | Argument parsing and command dispatch |
 

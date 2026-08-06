@@ -1,5 +1,6 @@
 import datetime as dt
 import io
+import json
 import os
 import subprocess
 import sys
@@ -124,6 +125,69 @@ class CliTests(unittest.TestCase):
             html = root / "r.html"
             self.run_cli("scan", str(root), "-o", str(html), "--no-color")
             self.assertIn("Thin history", html.read_text())
+
+    def test_diff_of_a_report_against_itself_is_quiet(self):
+        target = self.root / "r.json"
+        self.run_cli("scan", str(self.root), "-o", str(self.root / "r.html"),
+                     "--json", str(target), "--no-color")
+        code, out, _ = self.run_cli("diff", str(target), str(target), "--no-color")
+        self.assertEqual(code, 0)
+        self.assertIn("no file moved", out)
+
+    def _write_report(self, name, hotspots):
+        """A minimal report payload. The scoring itself is covered elsewhere;
+        what matters here is argument wiring and exit codes."""
+        path = self.root / name
+        path.write_text(json.dumps({
+            "tool": "blank", "version": "0.1.0",
+            "repository": {"name": "demo", "branch": "main", "remote": None, "root": "/tmp"},
+            "generated": "2024-06-01T12:00:00",
+            "window": {"since": None, "commits": 10,
+                       "first_commit": "2024-01-01T00:00:00", "last_commit": "2024-06-01T00:00:00"},
+            "summary": {"files": 3, "lines": 300, "authors": 2,
+                        "bus_factor": 1, "commits_per_week": 2.0},
+            "languages": [], "authors": [], "knowledge_risk": [], "coupling": [],
+            "hotspots": [{"path": p, "risk": r} for p, r in hotspots],
+        }))
+        return path
+
+    def test_diff_fails_on_regression_when_asked(self):
+        old = self._write_report("old.json", [("src/core.py", 0.20)])
+        new = self._write_report("new.json", [("src/core.py", 0.80)])
+
+        code, _, err = self.run_cli("diff", str(old), str(new),
+                                    "--fail-on-regression", "--no-color")
+        self.assertEqual(code, 1)
+        self.assertIn("riskier", err)
+
+        code, _, _ = self.run_cli("diff", str(old), str(new), "--no-color")
+        self.assertEqual(code, 0, "diff without a gate flag must not fail the build")
+
+    def test_diff_max_increase_threshold(self):
+        old = self._write_report("old.json", [("src/core.py", 0.20)])
+        new = self._write_report("new.json", [("src/core.py", 0.45)])
+
+        code, _, _ = self.run_cli("diff", str(old), str(new), "--max-increase", "0.5", "--no-color")
+        self.assertEqual(code, 0, "a 0.25 increase is under the 0.5 limit")
+
+        code, _, err = self.run_cli("diff", str(old), str(new), "--max-increase", "0.1", "--no-color")
+        self.assertEqual(code, 1)
+        self.assertIn("0.25", err)
+
+    def test_diff_writes_markdown(self):
+        old = self._write_report("old.json", [("src/core.py", 0.20)])
+        new = self._write_report("new.json", [("src/core.py", 0.80)])
+        code, out, _ = self.run_cli("diff", str(old), str(new), "--markdown", "-", "--no-color")
+        self.assertEqual(code, 0)
+        self.assertIn("what moved", out)
+        self.assertIn("`src/core.py`", out)
+
+    def test_diff_rejects_a_file_that_is_not_a_report(self):
+        junk = self.root / "junk.json"
+        junk.write_text('{"tool": "not-blank"}')
+        code, _, err = self.run_cli("diff", str(junk), str(junk), "--no-color")
+        self.assertEqual(code, 2)
+        self.assertIn("not a blank report", err)
 
     def test_non_repository_path_exits_two(self):
         with TemporaryDirectory() as plain:

@@ -8,10 +8,19 @@ import webbrowser
 from pathlib import Path
 
 from . import __version__
+from . import compare as _compare
 from .analyze import Report, build_report
+from .compare import CompareError
 from .gitlog import GitError
 from .render import render_html, render_json, render_markdown
-from .term import make_style, render_authors, render_coupling, render_hotspots, render_summary
+from .term import (
+    make_style,
+    render_authors,
+    render_comparison,
+    render_coupling,
+    render_hotspots,
+    render_summary,
+)
 
 EPILOG = """\
 examples:
@@ -22,6 +31,7 @@ examples:
   blank check --min-bus-factor 2 --max-risk 0.85   gate a CI build
   blank scan . --json - | jq .summary
   blank scan . --markdown "$GITHUB_STEP_SUMMARY"
+  blank diff baseline.json current.json --fail-on-regression
 """
 
 
@@ -84,6 +94,33 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(coupling)
     coupling.add_argument("-n", "--limit", type=int, default=20, help="rows to show (default: 20)")
 
+    diff = subs.add_parser(
+        "diff",
+        help="compare two JSON reports and show what moved",
+        description="Compare two `blank scan --json` payloads, oldest first. "
+                    "Neither file is re-analysed, so a baseline can be kept as a "
+                    "small artifact and compared against for months.",
+    )
+    diff.add_argument("before", help="the older JSON report")
+    diff.add_argument("after", help="the newer JSON report")
+    diff.add_argument("-n", "--limit", type=int, default=10, help="rows per section (default: 10)")
+    diff.add_argument("--markdown", metavar="FILE", help="write Markdown instead ('-' for stdout)")
+    diff.add_argument(
+        "--floor", type=float, default=_compare.NOISE_FLOOR, metavar="D",
+        help=f"ignore risk moves smaller than D (default: {_compare.NOISE_FLOOR})",
+    )
+    diff.add_argument(
+        "--max-increase", type=float, metavar="D",
+        help="exit 1 if any file's risk grew by more than D",
+    )
+    diff.add_argument(
+        "--fail-on-regression", action="store_true",
+        help="exit 1 if any file got riskier at all",
+    )
+    colour = diff.add_mutually_exclusive_group()
+    colour.add_argument("--color", dest="color", action="store_true", default=None, help="force colour")
+    colour.add_argument("--no-color", dest="color", action="store_false", help="disable colour")
+
     check = subs.add_parser("check", help="fail a build when thresholds are crossed")
     _add_common(check)
     check.add_argument("--max-risk", type=float, metavar="R", help="fail if any file scores above R (0..1)")
@@ -125,6 +162,32 @@ def _cmd_scan(args: argparse.Namespace, report: Report, style) -> int:
     return 0
 
 
+def _cmd_diff(args: argparse.Namespace, style) -> int:
+    diff = _compare.compare(
+        _compare.load(args.before), _compare.load(args.after), floor=args.floor
+    )
+    if args.markdown:
+        _write(args.markdown, _compare.render_markdown(diff, limit=args.limit), "markdown", style)
+    else:
+        print(render_comparison(diff, style, args.limit))
+
+    if args.fail_on_regression and diff.regressed:
+        print(
+            style.red(f"✗ {len(diff.regressed)} file(s) got riskier"),
+            file=sys.stderr,
+        )
+        return 1
+    if args.max_increase is not None and diff.worst_increase > args.max_increase:
+        print(
+            style.red(
+                f"✗ risk grew by {diff.worst_increase:.2f}, over the {args.max_increase} limit"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _cmd_check(args: argparse.Namespace, report: Report, style) -> int:
     failures: list[str] = []
     if args.max_risk is not None:
@@ -159,6 +222,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     style = make_style(args.color)
+
+    # diff reads JSON, never a repository — handle it before touching git.
+    if args.command == "diff":
+        try:
+            return _cmd_diff(args, style)
+        except CompareError as exc:
+            print(f"{style.red('error:')} {exc}", file=sys.stderr)
+            return 2
+
     try:
         report = _load(args)
     except GitError as exc:
