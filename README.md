@@ -186,7 +186,9 @@ A year of daily commits. Sustained weekends and month-long silences both show up
 The page follows your system preference and remembers the toggle. Both themes ship in the
 same stylesheet — there is no second build, and no flash on load.
 
-**Want the whole thing?** [Full-page screenshot](docs/img/report-full.png) of the Flask report.
+**Try the real thing:** [live report for pallets/flask](https://claude.ai/code/artifact/ddfb5aeb-04ba-4727-8906-bcb3428f6b7d)
+— the actual file `blank scan` wrote, sortable and filterable. Or the
+[full-page screenshot](docs/img/report-full.png).
 
 ---
 

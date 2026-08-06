@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     stats = subs.add_parser("stats", help="print a summary in the terminal")
     _add_common(stats)
 
-    hotspots = subs.add_parser("hotspots", help="rank files by churn × complexity")
+    hotspots = subs.add_parser("hotspots", help="rank files by revisions × complexity")
     _add_common(hotspots)
     hotspots.add_argument("-n", "--limit", type=int, default=20, help="rows to show (default: 20)")
 
